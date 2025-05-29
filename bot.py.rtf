@@ -1,0 +1,285 @@
+{\rtf1\ansi\deff0\nouicompat{\fonttbl{\f0\fnil\fcharset0 Calibri;}{\f1\fnil\fcharset1 Segoe UI Symbol;}{\f2\fnil\fcharset1 Segoe UI Symbol;}}
+{\colortbl ;\red0\green0\blue255;}
+{\*\generator Riched20 10.0.19041}\viewkind4\uc1 
+\pard\sa200\sl276\slmult1\f0\fs22\lang9 import logging\par
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup\par
+from telegram.ext import (\par
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler,\par
+    ContextTypes, MessageHandler, filters\par
+)\par
+from datetime import datetime, timedelta\par
+\par
+# Enable logging\par
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)\par
+logger = logging.getLogger(__name__)\par
+\par
+# In-memory user database\par
+users_data = \{\}\par
+\par
+# Constants\par
+REFERRAL_REWARD = 6\par
+DAILY_BONUS_AMOUNT = 2\par
+WITHDRAWAL_THRESHOLD = 100\par
+\par
+def get_user_data(user_id):\par
+    return users_data.setdefault(user_id, \{\par
+        'balance': 0,\par
+        'referrals': 0,\par
+        'joined': datetime.now(),\par
+        'last_bonus': None\par
+    \})\par
+\par
+def build_main_keyboard():\par
+    keyboard = [\par
+        [InlineKeyboardButton("\f1\u-10179?\u-9040?\f0  Balance", callback_data='balance')],\par
+        [InlineKeyboardButton("\f1\u-10180?\u-8319?\f0  Daily Bonus", callback_data='daily_bonus')],\par
+        [InlineKeyboardButton("\f1\u-10179?\u-8990?\f0  Referral Link", callback_data='referral')],\par
+        [InlineKeyboardButton("\f1\u-10179?\u-8988?\f0  Withdraw", callback_data='withdraw')],\par
+        [InlineKeyboardButton("\f1\u-10179?\u-9000?\f0  How to Earn?", callback_data='how_to_earn')],\par
+    ]\par
+    return InlineKeyboardMarkup(keyboard)\par
+\par
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):\par
+    user = update.effective_user\par
+    user_data = get_user_data(user.id)\par
+\par
+    # Handle referral if any\par
+    if context.args:\par
+        referrer_id = int(context.args[0])\par
+        if referrer_id != user.id and referrer_id in users_data and 'referred' not in user_data:\par
+            users_data[referrer_id]['balance'] += REFERRAL_REWARD\par
+            users_data[referrer_id]['referrals'] += 1\par
+            user_data['referred'] = referrer_id\par
+\par
+    await update.message.reply_text(\par
+        f"\f1\u-10179?\u-9141?\f0  Welcome \{user.first_name\}!\\n\\nEarn \u8377?6 for each friend you invite.\\nUse the menu below to check your balance, claim bonuses, and more.",\par
+        reply_markup=build_main_keyboard()\par
+    )\par
+\par
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):\par
+    query = update.callback_query\par
+    await query.answer()\par
+    user_id = query.from_user.id\par
+    user_data = get_user_data(user_id)\par
+\par
+    if query.data == 'balance':\par
+        await query.edit_message_text(f"\f1\u-10179?\u-9032?\f0  Your current balance is \u8377?\{user_data['balance']\}\\n\f1\u-10179?\u-9115?\f0  Referrals: \{user_data['referrals']\}", reply_markup=build_main_keyboard())\par
+\par
+    elif query.data == 'daily_bonus':\par
+        now = datetime.now()\par
+        if not user_data.get('last_bonus') or (now - user_data['last_bonus']).days >= 1:\par
+            user_data['balance'] += DAILY_BONUS_AMOUNT\par
+            user_data['last_bonus'] = now\par
+            await query.edit_message_text("\f2\u9989?\f0  You received \u8377?2 as a daily bonus!", reply_markup=build_main_keyboard())\par
+        else:\par
+            await query.edit_message_text("\f2\u10060?\f0  You've already claimed your bonus today.", reply_markup=build_main_keyboard())\par
+\par
+    elif query.data == 'referral':\par
+        bot_username = context.bot.username\par
+        referral_link = f"https://t.me/\{bot_username\}?start=\{user_id\}"\par
+        await query.edit_message_text(f"\f1\u-10179?\u-8990?\f0  Share this referral link to earn \u8377?6 per friend:\\n\{referral_link\}", reply_markup=build_main_keyboard())\par
+\par
+    elif query.data == 'withdraw':\par
+        if user_data['balance'] >= WITHDRAWAL_THRESHOLD:\par
+            await query.edit_message_text(f"\f2\u9989?\f0  Withdrawal requested for \u8377?\{user_data['balance']\}. You will be contacted soon.", reply_markup=build_main_keyboard())\par
+            user_data['balance'] = 0\par
+        else:\par
+            await query.edit_message_text("\f2\u10060?\f0  You need at least \u8377?100 to withdraw.", reply_markup=build_main_keyboard())\par
+\par
+    elif query.data == 'how_to_earn':\par
+        text = (\par
+            "\f1\u-10179?\u-9028?\f0  *How to Earn:*\\n\\n"\par
+            "1. Invite friends using your referral link.\\n"\par
+            "2. Earn \u8377?6 for each successful referral.\\n"\par
+            "3. Claim \u8377?2 daily bonus.\\n"\par
+            "4. Withdraw once you reach \u8377?100."\par
+        )\par
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=build_main_keyboard())\par
+\par
+async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):\par
+    await update.message.reply_text("Sorry, I didn't understand that. Use /start or the buttons to navigate.")\par
+\par
+def main():\par
+    # Replace with your actual bot token\par
+    TOKEN = "8162907304:AAEzeqxRP8lCFxzY8tj-3HdySxvNXAJd3i4"\par
+\par
+    app = ApplicationBuilder().token(TOKEN).build()\par
+    app.add_handler(CommandHandler("start", start))\par
+    app.add_handler(CallbackQueryHandler(handle_callback))\par
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown))\par
+\par
+    logger.info("Bot started. Polling...")\par
+    app.run_polling()\par
+\par
+if __name__ == '__main__':\par
+    main()\par
+import logging\par
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup\par
+from telegram.ext import (\par
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler,\par
+    ContextTypes, MessageHandler, filters\par
+)\par
+from datetime import datetime, timedelta\par
+\par
+# Enable logging\par
+logging.basicConfig(level=logging.INFO)\par
+logger = logging.getLogger(__name__)\par
+\par
+# Constants\par
+CHANNEL_USERNAME = "@RIyL8z1mZPMxNDVl"  # Join-check channel\par
+CHANNEL_INVITE_LINK = "{{\field{\*\fldinst{HYPERLINK https://t.me/+RIyL8z1mZPMxNDVl }}{\fldrslt{https://t.me/+RIyL8z1mZPMxNDVl\ul0\cf0}}}}\f0\fs22 "\par
+REFERRAL_REWARD = 6\par
+DAILY_BONUS = 2\par
+WITHDRAWAL_MINIMUM = 100\par
+\par
+# In-memory storage\par
+users = \{\}\par
+\par
+# Util: get or initialize user data\par
+def get_user(user_id):\par
+    if user_id not in users:\par
+        users[user_id] = \{\par
+            'balance': 0,\par
+            'referrals': 0,\par
+            'joined': datetime.now(),\par
+            'last_bonus': None,\par
+            'referred_by': None,\par
+            'has_joined_channel': False\par
+        \}\par
+    return users[user_id]\par
+\par
+# UI: 2x2 Inline Keyboard Layout\par
+def main_menu():\par
+    keyboard = [\par
+        [InlineKeyboardButton("\f1\u-10179?\u-9040?\f0  Balance", callback_data='balance'),\par
+         InlineKeyboardButton("\f1\u-10179?\u-8988?\f0  Withdraw", callback_data='withdraw')],\par
+        [InlineKeyboardButton("\f1\u-10179?\u-8990?\f0  Referral Info", callback_data='referral'),\par
+         InlineKeyboardButton("\f1\u-10179?\u-9000?\f0  How to Earn?", callback_data='howto')],\par
+    ]\par
+    return InlineKeyboardMarkup(keyboard)\par
+\par
+def back_button():\par
+    return InlineKeyboardMarkup([[InlineKeyboardButton("\f1\u-10179?\u-8935?\f0  Back", callback_data='back')]])\par
+\par
+# Join Channel Check\par
+async def is_user_in_channel(user_id, context):\par
+    try:\par
+        member = await context.bot.get_chat_member(CHANNEL_USERNAME, user_id)\par
+        return member.status in ['member', 'administrator', 'creator']\par
+    except Exception as e:\par
+        logger.warning(f"Channel check failed: \{e\}")\par
+        return False\par
+\par
+# /start command\par
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):\par
+    user = update.effective_user\par
+    user_id = user.id\par
+    user_data = get_user(user_id)\par
+\par
+    # Referral system\par
+    if context.args:\par
+        referrer_id = int(context.args[0])\par
+        if referrer_id != user_id and not user_data['referred_by']:\par
+            referrer_data = get_user(referrer_id)\par
+            referrer_data['balance'] += REFERRAL_REWARD\par
+            referrer_data['referrals'] += 1\par
+            user_data['referred_by'] = referrer_id\par
+\par
+    # Check channel membership\par
+    if not await is_user_in_channel(user_id, context):\par
+        join_keyboard = InlineKeyboardMarkup([\par
+            [InlineKeyboardButton("\f2\u9989?\f0  Join Channel", url=CHANNEL_INVITE_LINK)],\par
+            [InlineKeyboardButton("\f1\u-10179?\u-8956?\f0  I've Joined", callback_data="verify_join")]\par
+        ])\par
+        await update.message.reply_text(\par
+            "\f1\u-10179?\u-8944?\f0  To use the bot, please join our official channel first:",\par
+            reply_markup=join_keyboard\par
+        )\par
+        return\par
+\par
+    # Proceed to main menu\par
+    await update.message.reply_text(\par
+        f"\f1\u-10179?\u-9141?\f0  Welcome \{user.first_name\}!\\nUse the buttons below to start earning:",\par
+        reply_markup=main_menu()\par
+    )\par
+\par
+# Join Verification\par
+async def verify_join(update: Update, context: ContextTypes.DEFAULT_TYPE):\par
+    query = update.callback_query\par
+    user_id = query.from_user.id\par
+\par
+    if await is_user_in_channel(user_id, context):\par
+        await query.edit_message_text("\f2\u9989?\f0  Verified! Welcome.", reply_markup=main_menu())\par
+    else:\par
+        await query.edit_message_text("\f2\u10060?\f0  You still haven't joined. Please join the channel first.",\par
+                                      reply_markup=InlineKeyboardMarkup([\par
+                                          [InlineKeyboardButton("\f2\u9989?\f0  Join Channel", url=CHANNEL_INVITE_LINK)],\par
+                                          [InlineKeyboardButton("\f1\u-10179?\u-8956?\f0  I've Joined", callback_data="verify_join")]\par
+                                      ]))\par
+\par
+# CallbackHandler\par
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):\par
+    query = update.callback_query\par
+    user_id = query.from_user.id\par
+    user_data = get_user(user_id)\par
+    await query.answer()\par
+\par
+    if query.data == "balance":\par
+        msg = f"\f1\u-10179?\u-9032?\f0  Balance: \u8377?\{user_data['balance']\}\\n\f1\u-10179?\u-9115?\f0  Referrals: \{user_data['referrals']\}"\par
+        await query.edit_message_text(msg, reply_markup=back_button())\par
+\par
+    elif query.data == "withdraw":\par
+        if user_data['balance'] >= WITHDRAWAL_MINIMUM:\par
+            await query.edit_message_text(\par
+                f"\f2\u9989?\f0  Withdrawal request of \u8377?\{user_data['balance']\} received.\\nWe'll contact you shortly.",\par
+                reply_markup=back_button()\par
+            )\par
+            user_data['balance'] = 0\par
+        else:\par
+            await query.edit_message_text(\par
+                f"\f2\u10060?\f0  Minimum \u8377?\{WITHDRAWAL_MINIMUM\} required to withdraw.\\nYour balance: \u8377?\{user_data['balance']\}",\par
+                reply_markup=back_button()\par
+            )\par
+\par
+    elif query.data == "referral":\par
+        bot_username = context.bot.username\par
+        referral_link = f"https://t.me/referkroearnkro2l?start=\{user_id\}"\par
+        msg = f"\f1\u-10179?\u-8990?\f0  Share this link and earn \u8377?6 per referral:\\n\{referral_link\}"\par
+        await query.edit_message_text(msg, reply_markup=back_button())\par
+\par
+    elif query.data == "howto":\par
+        msg = (\par
+            "\f1\u-10179?\u-9000?\f0  *How to Earn:*\\n\\n"\par
+            "1. Join the required channel\\n"\par
+            "2. Share your referral link with friends\\n"\par
+            "3. Earn \u8377?6 per valid referral\\n"\par
+            "4. Withdraw at \u8377?100 minimum"\par
+        )\par
+        await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=back_button())\par
+\par
+    elif query.data == "back":\par
+        await query.edit_message_text("\f1\u-10179?\u-8935?\f0  Back to main menu:", reply_markup=main_menu())\par
+\par
+# Unknown messages\par
+async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):\par
+    await update.message.reply_text("\f2\u10067?\f0  Use /start or tap buttons to interact with the bot.")\par
+\par
+# Main app\par
+def main():\par
+    # Replace with your bot token\par
+    TOKEN = "8162907304:AAEzeqxRP8lCFxzY8tj-3HdySxvNXAJd3i4"\par
+\par
+    app = ApplicationBuilder().token(TOKEN).build()\par
+\par
+    app.add_handler(CommandHandler("start", start))\par
+    app.add_handler(CallbackQueryHandler(handle_callback))\par
+    app.add_handler(CallbackQueryHandler(verify_join, pattern="^verify_join$"))\par
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown))\par
+\par
+    logger.info("Bot is running...")\par
+    app.run_polling()\par
+\par
+if __name__ == "__main__":\par
+    main()\par
+}
+ 
